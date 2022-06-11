@@ -86,3 +86,7 @@ from pyscape import SVG
 img = SVG.IM('path/to/svg/file.svg')
 SVG.EXPORT('path/to/svg/file.svg')
 ```
+
+## Install
+
+I personally don't feel this is fleshed out enough to publish, so for now, the easiest way to use this is to clone the repo and run `python -m pip install .`. You can then import and use pyscape.
