@@ -1,10 +1,12 @@
 import subprocess
 import re
+import skia
+import io
 
 from pathlib import Path
+from PIL import Image
 from xml.etree import ElementTree as ET
 from typing import Any, Tuple, Union, List
-from PIL import Image
 
 
 class SVG:
@@ -22,7 +24,7 @@ class SVG:
         "rerender": 6
     }
 
-    def __init__(self, fp: str | Path | bytes):
+    def __init__(self, fp: Union[str, Path, bytes]):
         """Create an SVG instance from a svg file.
 
         Args:
@@ -157,7 +159,31 @@ class SVG:
         multi = max(max_width / size[0], max_height / size[1])
         return round(size[0] * multi), round(size[1] * multi)
 
-    def __im(self, dpi: int = 96, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page') -> Image.Image:
+    def __im_skia(self, dpi = None, size: Union[int, Tuple[int, int]] = None):
+        path = Path(self.fp).resolve()
+
+        skia_stream = skia.Stream.MakeFromFile(str(path))
+        skia_svg = skia.SVGDOM.MakeFromStream(skia_stream)
+
+        w, h = skia_svg.containerSize()
+
+        if(size):
+            sw, sh = size[0], size[1]
+        else:
+            sw, sh = (dpi / 96) * w, (dpi / 96) * h
+
+        surface = skia.Surface(round(sw), round(sh))
+        with surface as canvas:
+            canvas.scale(round(sw) / w, round(sh) / h)
+            skia_svg.render(canvas)
+            
+        with io.BytesIO(surface.makeImageSnapshot().encodeToData()) as f:
+            img = Image.open(f)
+            img.load()
+        
+        return img
+
+    def __im_inkscape(self, dpi: int = None, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page') -> Image.Image:
         """Helper function to render a single PIL.Image object using inkscape.
 
         Args:
@@ -208,7 +234,20 @@ class SVG:
 
         return Image.open(pipe.stdout)
 
-    def __im_multi(self, dpi: List[int] = None, sizes: List[Union[int, Tuple[int, int]]] = None, margin: int = None, area: str = 'page', filter: str = "lanczos") -> List[Image.Image]:
+    def __im(self, dpi: int = None, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page', renderer: str = 'skia'):
+        if not dpi and not size:
+            dpi = 96
+        
+        if renderer == 'skia':
+            return self.__im_skia(dpi, size)
+        elif renderer == 'inkscape':
+            return self.__im_inkscape(dpi, size, margin, area)
+
+        else:
+            raise ValueError(
+                "Invalid renderer. Only support renderers are 'skia' and 'inkscape'")
+
+    def __im_multi(self, dpi: List[int] = None, sizes: List[Union[int, Tuple[int, int]]] = None, margin: int = None, area: str = 'page', filter: str = "lanczos", renderer: str = "skia") -> List[Image.Image]:
         """Helper function to generate images of multiple specified sizes.
 
         Args:
@@ -235,13 +274,13 @@ class SVG:
 
         sizes = __class__.__calc_sizes(self.size, dpi, sizes)
         if filter == "rerender":
-            return list(self.__im(size=size, margin=margin, area=area) for size in sizes)
+            return list(self.__im(size=size, margin=margin, area=area, renderer=renderer) for size in sizes)
         else:
             img = self.__im(size=__class__.__max_size(
-                self.size, sizes), margin=margin, area=area)
+                self.size, sizes), margin=margin, area=area, renderer=renderer)
             return list(img.resize(size, __class__.__RESAMPLING_FILTERS[filter.lower()]) for size in sizes)
 
-    def __export(img: Image.Image, stem: str = None, format: str | List[str] = "png"):
+    def __export(img: Image.Image, stem: str = None, format: Union[str, List[str]] = "png"):
         """Helper function to export a PIL.Image.Image instance to another image format.
 
         Args:
@@ -271,7 +310,7 @@ class SVG:
             except OSError:
                 img.convert("RGB").save(f"{stem}.{f}")
 
-    def __export_multi(img: List[Image.Image], stem: str = None, format: str | List[str] = "png"):
+    def __export_multi(img: List[Image.Image], stem: str = None, format: Union[str, List[str]] = "png"):
         """Helper function to export multiple images in different formats.
 
         Args:
@@ -283,8 +322,9 @@ class SVG:
         for i in img:
             __class__.__export(i, f"{stem}_{i.size[0]}_{i.size[1]}", format)
 
-    def im(self, dpi: int | List[int] = 96, size: List[Union[int, Tuple[int, int]]] = None, margin: int = None, area: str = 'page', filter="lanczos") -> Union[Image.Image, List[Image.Image]]:
-        """Render the SVG as PIL.Image instance.
+    def im(self, dpi: Union[int, List[int]] = None, size: List[Union[int, Tuple[int, int]]] = None, margin: int = None, area: str = 'page', filter: str = "lanczos", renderer: str = "skia") -> Union[Image.Image, List[Image.Image]]:
+        """
+        Render the SVG as PIL.Image instance.
 
         Args:
             dpi (int | List[int], optional): The DPI(s) to render the image(s) at. Defaults to 96.
@@ -298,15 +338,15 @@ class SVG:
             Union[Image.Image, List[Image.Image]]: _description_
         """
         if (dpi and size) or (isinstance(dpi, list) and len(dpi) > 1) or (isinstance(size, list) and len(size) > 1):
-            return self.__im_multi(dpi, size, margin, area, filter)
+            return self.__im_multi(dpi, size, margin, area, filter, renderer=renderer)
         elif isinstance(dpi, list):
-            return self.__im(dpi[0], size, margin, area)
+            return self.__im(dpi[0], size, margin, area, renderer=renderer)
         elif isinstance(size, list):
-            return self.__im(dpi, size[0], margin, area)
+            return self.__im(dpi, size[0], margin, area, renderer=renderer)
 
         return self.__im(dpi, size, margin, area)
 
-    def save(self, fp: str | Path | bytes = None):
+    def save(self, fp: Union[str, Path, bytes] = None):
         """Saves the SVG XML tree.
 
         Args:
@@ -319,7 +359,7 @@ class SVG:
 
         ET.ElementTree(self.root).write(fp)
 
-    def export(self, stem: str = None, format: str | List[str] = "png", dpi: int | List[int] = 96, size: List[Union[int, Tuple[int, int]]] = None, margin: int = None, area: str = 'page', filter="lanczos"):
+    def export(self, stem: str = None, format: Union[str, List[str]] = "png", dpi: Union[int, List[int]] = 96, size: List[Union[int, Tuple[int, int]]] = None, margin: int = None, area: str = 'page', filter: str = "lanczos", renderer: str = "skia"):
         """Renders and exports image(s) of specified size(s) as specified format(s).
 
         Args:
@@ -336,7 +376,7 @@ class SVG:
         if not stem:
             stem = self.fp.stem
 
-        img = self.im(dpi, size, margin, area, filter)
+        img = self.im(dpi, size, margin, area, filter, renderer=renderer)
         if isinstance(img, list) and len(img) > 1:
             __class__.__export_multi(img, stem, format)
         elif isinstance(img, list):
@@ -345,7 +385,7 @@ class SVG:
             __class__.__export(img, stem, format)
 
     @classmethod
-    def IM(cls, fp: str | Path | bytes, dpi: int = 96, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page'):
+    def IM(cls, fp: Union[str, Path, bytes], dpi: int = 96, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page', renderer: str = 'skia'):
         """Classmethod that returns a PIL.Image instance of a specified SVG. Useful if you do not need to create a class object.
 
         Args:
@@ -358,10 +398,10 @@ class SVG:
         Returns:
             _type_: _description_
         """
-        return cls(fp).im(dpi, size, margin, area)
+        return cls(fp).im(dpi, size, margin, area, renderer)
 
     @classmethod
-    def EXPORT(cls, fp: str | Path | bytes, stem: str = None, format: str | List[str] = "png", dpi: int = 96, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page', filter="lanczos"):
+    def EXPORT(cls, fp: Union[str, Path, bytes], stem: str = None, format: Union[str, List[str]] = "png", dpi: int = 96, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page', filter="lanczos", renderer: str = "skia"):
         """Classmethod that renders an SVG and exports image(s) of specified size(s) as specified format(s). Useful if you do not need to create an SVG class object.
 
         Args:
@@ -376,4 +416,4 @@ class SVG:
             area (str, optional): The area to render. Valid values are 'page', 'drawing', and a string of form 'x y w h'. Defaults to 'page'.
             filter (str, optional): Which filter to use for to downscale. Use 'rerender' to render each image individual at desired size. Defaults to 'lanczos'.
         """
-        cls(fp).export(stem, format, dpi, size, margin, area, filter)
+        cls(fp).export(stem, format, dpi, size, margin, area, filter, renderer)

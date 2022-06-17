@@ -13,7 +13,7 @@ setup (
     author="jlwoolf",
     author_email="jlwoolf@proton.me",
     packages=['pyscape'],
-    install_requires=['pillow'],
+    install_requires=['pillow', 'skia-python'],
     license='MIT',
     keywords="svg, inkscape, pillow",
     # entry_points={

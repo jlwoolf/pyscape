@@ -1,6 +1,6 @@
 # <img src="./svg-to-img.svg" width=20 height=20> Pyscape
 
-Pyscape is a python library that uses inkscape and pillow to make working with SVG files easier. Pillow is quite a popular and easy to use python image library, but there unfortunately doesn't exist an easy way to utilize it with SVG's. Pyscape is an (albeit limited) attempt to make that process a little easier. Pyscape uses [inkscape](https://inkscape.org/) to render an svg, and returning a PIL Image instance. There are no temporary files, instead rendering the image to stdout and feeding that to PIL. 
+Pyscape is a python library that uses inkscape/skia and pillow to make working with SVG files easier. Pillow is quite a popular and easy to use python image library, but there unfortunately doesn't exist an easy way to utilize it with SVG's. Pyscape is an (albeit limited) attempt to make that process a little easier. Pyscape uses [inkscape](https://inkscape.org/) or [skia](https://skia.org/) to render an svg, and returning a PIL Image instance. There are no temporary files, instead rendering the image to stdout and feeding that to PIL. 
 
 ## Usage
 
@@ -86,6 +86,8 @@ from pyscape import SVG
 img = SVG.IM('path/to/svg/file.svg')
 SVG.EXPORT('path/to/svg/file.svg')
 ```
+
+The default renderer is `skia` but skia has limited svg support and some svg objects may not render properly. If your svg has imports of other svg's, I would recommend the inkscape renderer.
 
 ## Install
 
