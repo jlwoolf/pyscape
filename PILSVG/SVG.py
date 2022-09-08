@@ -3,14 +3,21 @@ import re
 import skia
 import io
 
+from platform import system
 from pathlib import Path
 from PIL import Image
 from xml.etree import ElementTree as ET
 from typing import Any, Tuple, Union, List
 
 
+
 class SVG:
     """SVG class to load, edit, render, and export svg files using pillow and inkscape."""
+
+    if system() == "Darwin":
+        __SYSTEM_DPI = 72
+    else:
+        __SYSTEM_DPI = 96
 
     __WIDTH_HEIGHT_REGEX = "^[1-9]\d*(px|)$|^[1-9]\d*\.?\d*(v(h|w)|\%)$"
     __ICO_SIZES = [16, 32, 48, 64, 256]
@@ -30,29 +37,82 @@ class SVG:
         Args:
             fp (str | Path | bytes): The svg filepath.
         """
-        self.root: ET.Element = ET.parse(fp).getroot()
+
+        # Check if filepath is valid
         self.fp: Path = Path(fp).resolve()
+        if not self.fp.exists():
+            raise FileNotFoundError(f"SVG file '{fp}' does not exist.")
+        
+        # Load SVG xml file
+        self.root: ET.Element = ET.parse(fp).getroot()
+
+    def __str_to_nu(self, input: str) -> Tuple[float, str]:
+        """Extracts size number and units from string.
+
+        Args:
+            input (str): String in the form of '{number}{units}'. Accepts strings containing integers and floats.
+        
+        Returns:
+            Tuple[float, str]: The number and unit values.
+        """
+        unit = re.findall("(|mm|px|in|vw|\%)$", input)[0]
+        num = float(re.findall("^([1-9]\d*\.?\d*|[1-9]\d*)", input)[0])
+        return num, unit
+
+    def __to_px(self, num: float, unit: str, view: Tuple[float, float] = None) -> int:
+        """Converts a number of unit types mm, cm, in, vw, vh, and % to pixels.
+
+        Args:
+            number (float): The number to convert to pixels
+            unit (str): The unit of the number for conversion. Currently supports mm, cm, in, vw, vh, and %.
+            view (Tuple[float, float]): The svg view box dimensions for units of vw, vh, and %.
+        
+        Raises:
+            ValueError: View box is not provided for units of vw, vh, and %.
+
+        Returns:
+            int: The number converted to pixel units.
+        """
+        
+
+        if unit == 'mm':
+            num *= (__class__.__SYSTEM_DPI / 25.4)
+        if unit == 'cm':
+            num *= (__class__.__SYSTEM_DPI / 2.54)
+        elif unit == 'in':
+            num *= __class__.__SYSTEM_DPI
+
+        if unit in ["%", "vw", "vh"]:
+            if not view:
+                raise ValueError(f"View box is necessary for conversions involving {unit}'s")
+
+            sw, sh = view
+            if unit == "vh":
+                num *= sh / 100.
+            else:
+                num *= sw / 100.                
+            
+        return str(num), unit
 
     @property
     def size(self) -> Tuple[int, int]:
         """The size of the svg file in pixels. Defaults to (300, 150).
         """
-        viewBox = tuple(int(i) for i in self.root.attrib['viewBox'].split(
+        viewBox = tuple(float(i) for i in self.root.attrib['viewBox'].split(
         )) if 'viewBox' in self.root.attrib else (0, 0, 300, 150)
         width = self.root.attrib['width'] if 'width' in self.root.attrib else "100vw"
         height = self.root.attrib['height'] if 'height' in self.root.attrib else "100vh"
 
-        size = [int(viewBox[2] - viewBox[0]), int(viewBox[3] - viewBox[1])]
-        if re.findall("^[1-9]\d*(px|)$", width):
-            size[0] = int(re.findall("^[1-9]\d*", width)[0])
-        if re.findall("^[1-9]\d*(px|)$", height):
-            size[1] = int(re.findall("^[1-9]\d*", height)[0])
+        sw, sh = float(viewBox[2] - viewBox[0]), float(viewBox[3] - viewBox[1])
+        _, uw = self.__str_to_nu(width)
+        _, uh = self.__str_to_nu(height)
+        
+        if uw in ["mm", "in", "cm"]:
+            sw = self.__to_px(sw, uw)
+        if uh in ["mm", "in", "cm"]:
+            sh = self.__to_px(sh, uh)
 
-        self.root.attrib['viewBox'] = " ".join(str(v) for v in viewBox)
-        self.root.attrib['width'] = width
-        self.root.attrib['height'] = height
-
-        return tuple(size)
+        return int(sw), int(sh)
 
     @property
     def viewBox(self) -> Tuple[int, int, int, int]:
@@ -123,72 +183,79 @@ class SVG:
 
         return self.root.attrib[attrib]
 
-    def __calc_sizes(size: Tuple[int, int], dpi: List[int] = None, sizes: List[Union[int, Tuple[int, int]]] = None) -> List[Tuple[int, int]]:
+    def __calc_sizes(self, dpi: List[int] = None, sizes: List[Union[int, Tuple[int, int]]] = None) -> List[Tuple[int, int]]:
         """Helper function to calculate the sizes of all images being rendered. Converts DPI values in pixel dimension.
 
         Args:
-            size (Tuple[int, int]): Sizes of the svg.
             dpi (List[int], optional): DPI of the images being rendered. Defaults to None.
             sizes (List[Union[int, Tuple[int, int]]] | None, optional): Sizes of the images being rendered. Defaults to None.
 
         Returns:
             List[Tuple[int, int]]: A list of sizes (int pairs) of the images being rendered.
         """
-        values = list()
-        if dpi:
-            values.extend(
-                [(round(size[0] * (i / 96)), round(size[1] * (i / 96))) for i in dpi])
+        sw, sh = self.size
 
-        if sizes:
-            values.extend([i if isinstance(i, tuple) else (i, round(i * size[0]/size[1]))
-                          for i in sizes])
+        if not dpi and not sizes:
+            values = [(sw, sh)]
+        else:
+            values = []
+            if dpi:
+                values.extend(
+                    [(round(sw * (i / __class__.__SYSTEM_DPI)), round(sh * (i / __class__.__SYSTEM_DPI))) for i in dpi])
+            if sizes:
+                values.extend([i if isinstance(i, tuple) else (
+                    i, round(i * sh/sw)) for i in sizes])
 
         return values
 
-    def __max_size(size: Tuple[int, int], sizes: List[Tuple[int, int]]) -> Tuple[int, int]:
+    def __max_size(self, sizes: List[Tuple[int, int]]) -> Tuple[int, int]:
         """Helper function to determine the largest image size to render such that all other sizes are a down scaling of it.
 
         Args:
-            size (Tuple[int, int]): The size of the svg.
             sizes (List[Tuple[int, int]]): The sizes of the images being rendered.
 
         Returns:
             Tuple[int, int]: A size (int pair) representing the largest necessary image to render.
         """
-        max_width, max_height = (max(i) for i in zip(*sizes))
-        multi = max(max_width / size[0], max_height / size[1])
-        return round(size[0] * multi), round(size[1] * multi)
+        sw, sh = self.size
 
-    def __im_skia(self, dpi = None, size: Union[int, Tuple[int, int]] = None):
+        max_width, max_height = (max(i) for i in zip(*sizes))
+        multi = max(max_width / sw, max_height / sh)
+        return round(sw * multi), round(sh * multi)
+    
+    def __im_skia(self, size: Tuple[int, int]) -> Image.Image:
+        """Helper function to render a single PIL.Image object using skia-python.
+
+        Args:
+            size (Union[int, Tuple[int, int]], optional): Size of the rendered image.
+
+        Returns:
+            Image.Image: An instance of PIL.Image.Image.
+        """
         path = Path(self.fp).resolve()
 
         skia_stream = skia.Stream.MakeFromFile(str(path))
         skia_svg = skia.SVGDOM.MakeFromStream(skia_stream)
 
         w, h = skia_svg.containerSize()
-
-        if(size):
-            sw, sh = size[0], size[1]
-        else:
-            sw, sh = (dpi / 96) * w, (dpi / 96) * h
+        sw, sh = size
 
         surface = skia.Surface(round(sw), round(sh))
         with surface as canvas:
             canvas.scale(round(sw) / w, round(sh) / h)
             skia_svg.render(canvas)
-            
+
         with io.BytesIO(surface.makeImageSnapshot().encodeToData()) as f:
             img = Image.open(f)
             img.load()
-        
+
         return img
 
-    def __im_inkscape(self, dpi: int = None, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page') -> Image.Image:
+    def __im_inkscape(self, size: Tuple[int, int], margin: int = None, area: str = 'page') -> Image.Image:
         """Helper function to render a single PIL.Image object using inkscape.
 
         Args:
-            dpi (int, optional): DPI of the rendered image. Defaults to 96.
-            size (Union[int, Tuple[int, int]], optional): Size of the rendered image. Defaults to None.
+            size (Union[int, Tuple[int, int]], optional): Size of the rendered image.
             margin (int, optional): Margins on the rendered image. Defaults to None.
             area (str, optional): The area to render. Valid values are 'page', 'drawing', and a string of form 'x y w h'. Defaults to 'page'.
 
@@ -205,19 +272,9 @@ class SVG:
         else:
             options.extend([f"--export-area={area}"])
 
-        if dpi:
-            options.extend([f"--export-dpi={dpi}"])
-
+        sw, sh = size
         if size:
-            if isinstance(size, int):
-                options.extend([f"--export-width={size}"])
-            elif not size[1]:
-                options.extend([f"--export-width={size[0]}"])
-            elif not size[0]:
-                options.extend([f"--export-height={size[1]}"])
-            else:
-                options.extend(
-                    [f"--export-width={size[0]}", f"--export-height={size[1]}"])
+            options.extend([f"--export-width={sw}", f"--export-height={sh}"])
 
         if margin:
             options.extend([f"--export-margin={margin}"])
@@ -227,57 +284,52 @@ class SVG:
         else:
             options.extend([f"{path}"])
 
-        pipe = subprocess.Popen(options, stdout=subprocess.PIPE)
+        try:
+            pipe = subprocess.Popen(options, stdout=subprocess.PIPE)
+        except FileNotFoundError:
+            raise FileNotFoundError("Please make sure inkscape has been added to path")
 
         pipe.stdout.readline()
         pipe.stdout.readline()
 
         return Image.open(pipe.stdout)
 
-    def __im(self, dpi: int = None, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page', renderer: str = 'skia'):
-        if not dpi and not size:
-            dpi = 96
-        
+    def __im(self, size: Tuple[int, int], margin: int = None, area: str = 'page', renderer: str = 'skia') -> Image.Image:
+        """Helper function to choose proper renderer. Throws an error if the renderer is not supported.
+        """
+
         if renderer == 'skia':
-            return self.__im_skia(dpi, size)
+            return self.__im_skia(size)
         elif renderer == 'inkscape':
-            return self.__im_inkscape(dpi, size, margin, area)
+            return self.__im_inkscape(size, margin, area)
 
         else:
             raise ValueError(
-                "Invalid renderer. Only support renderers are 'skia' and 'inkscape'")
+                "Invalid renderer. Only supported renderers are 'skia' and 'inkscape'")
 
-    def __im_multi(self, dpi: List[int] = None, sizes: List[Union[int, Tuple[int, int]]] = None, margin: int = None, area: str = 'page', filter: str = "lanczos", renderer: str = "skia") -> List[Image.Image]:
+    def __im_multi(self, sizes: List[Tuple[int, int]], margin: int = None, area: str = 'page', filter: str = "lanczos", renderer: str = "skia") -> List[Image.Image]:
         """Helper function to generate images of multiple specified sizes.
 
         Args:
-            dpi (List[int], optional): DPI's of the images to render. Defaults to None.
-            sizes (List[Union[int, Tuple[int, int]]], optional): Sizes of the images to render. Defaults to None.
+            sizes (List[Union[int, Tuple[int, int]]], optional): Sizes of the images to render.
             margin (int, optional): Margin of the images (shared across all). Defaults to None.
             area (str, optional): The area to render. Valid values are 'page', 'drawing', and a string of form 'x y w h'. Defaults to 'page'.
             filter (str, optional): Which filter to use for to downscale. Use 'rerender' to render each image individual at desired size. Defaults to 'lanczos'.
 
         Raises:
-            ValueError: No DPI's or sizes are specified.
             ValueError: Filter is invalid.
 
         Returns:
             List[Image.Image]: A list of PIL.Image.Image instances of different sizes.
         """
-        if not dpi and not sizes:
-            raise ValueError(
-                "Must specify either multiple dpi, sizes, or both")
-
         if filter not in __class__.__RESAMPLING_FILTERS:
             raise ValueError(
                 f"Invalid filter: {filter}\nValid filters are: {' '.join(__class__.__RESAMPLING_FILTERS.keys())}")
 
-        sizes = __class__.__calc_sizes(self.size, dpi, sizes)
         if filter == "rerender":
             return list(self.__im(size=size, margin=margin, area=area, renderer=renderer) for size in sizes)
         else:
-            img = self.__im(size=__class__.__max_size(
-                self.size, sizes), margin=margin, area=area, renderer=renderer)
+            img = self.__im(size=self.__max_size(sizes), margin=margin, area=area, renderer=renderer)
             return list(img.resize(size, __class__.__RESAMPLING_FILTERS[filter.lower()]) for size in sizes)
 
     def __export(img: Image.Image, stem: str = None, format: Union[str, List[str]] = "png"):
@@ -324,10 +376,10 @@ class SVG:
 
     def im(self, dpi: Union[int, List[int]] = None, size: List[Union[int, Tuple[int, int]]] = None, margin: int = None, area: str = 'page', filter: str = "lanczos", renderer: str = "skia") -> Union[Image.Image, List[Image.Image]]:
         """
-        Render the SVG as PIL.Image instance.
+        Render the SVG as PIL.Image instance. The default rendering size is one the one provided by the SVG file.
 
         Args:
-            dpi (int | List[int], optional): The DPI(s) to render the image(s) at. Defaults to 96.
+            dpi (int | List[int], optional): The DPI(s) to render the image(s) at.
             size (List[Union[int, Tuple[int, int]]], optional): The size(s) to render the image(s) at. 
             Can be a single integer (defining the width) or a pair for width and height. Defaults to None.
             margin (int, optional): Margin of the images (shared across all). Defaults to None.
@@ -337,14 +389,17 @@ class SVG:
         Returns:
             Union[Image.Image, List[Image.Image]]: _description_
         """
-        if (dpi and size) or (isinstance(dpi, list) and len(dpi) > 1) or (isinstance(size, list) and len(size) > 1):
-            return self.__im_multi(dpi, size, margin, area, filter, renderer=renderer)
-        elif isinstance(dpi, list):
-            return self.__im(dpi[0], size, margin, area, renderer=renderer)
-        elif isinstance(size, list):
-            return self.__im(dpi, size[0], margin, area, renderer=renderer)
+        if isinstance(dpi, int):
+            dpi = [dpi]
+        if isinstance(size, int):
+            size = [size]
 
-        return self.__im(dpi, size, margin, area)
+        size = self.__calc_sizes(dpi, size)
+
+        if len(size) > 1:
+            return self.__im_multi(size, margin, area, filter, renderer=renderer)
+        else:
+            return self.__im(size[0], margin, area, renderer=renderer)
 
     def save(self, fp: Union[str, Path, bytes] = None):
         """Saves the SVG XML tree.
@@ -359,7 +414,7 @@ class SVG:
 
         ET.ElementTree(self.root).write(fp)
 
-    def export(self, stem: str = None, format: Union[str, List[str]] = "png", dpi: Union[int, List[int]] = 96, size: List[Union[int, Tuple[int, int]]] = None, margin: int = None, area: str = 'page', filter: str = "lanczos", renderer: str = "skia"):
+    def export(self, stem: str = None, format: Union[str, List[str]] = "png", dpi: Union[int, List[int]] = None, size: List[Union[int, Tuple[int, int]]] = None, margin: int = None, area: str = 'page', filter: str = "lanczos", renderer: str = "skia"):
         """Renders and exports image(s) of specified size(s) as specified format(s).
 
         Args:
@@ -385,7 +440,7 @@ class SVG:
             __class__.__export(img, stem, format)
 
     @classmethod
-    def IM(cls, fp: Union[str, Path, bytes], dpi: int = 96, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page', renderer: str = 'skia'):
+    def IM(cls, fp: Union[str, Path, bytes], dpi: Union[int, List[int]] = None, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page', renderer: str = 'skia'):
         """Classmethod that returns a PIL.Image instance of a specified SVG. Useful if you do not need to create a class object.
 
         Args:
@@ -401,7 +456,7 @@ class SVG:
         return cls(fp).im(dpi, size, margin, area, renderer)
 
     @classmethod
-    def EXPORT(cls, fp: Union[str, Path, bytes], stem: str = None, format: Union[str, List[str]] = "png", dpi: int = 96, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page', filter="lanczos", renderer: str = "skia"):
+    def EXPORT(cls, fp: Union[str, Path, bytes], stem: str = None, format: Union[str, List[str]] = "png", dpi: Union[int, List[int]] = None, size: Union[int, Tuple[int, int]] = None, margin: int = None, area: str = 'page', filter="lanczos", renderer: str = "skia"):
         """Classmethod that renders an SVG and exports image(s) of specified size(s) as specified format(s). Useful if you do not need to create an SVG class object.
 
         Args:
