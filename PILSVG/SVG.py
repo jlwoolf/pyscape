@@ -92,7 +92,7 @@ class SVG:
             else:
                 num *= sw / 100.                
             
-        return str(num), unit
+        return num
 
     @property
     def size(self) -> Tuple[int, int]:
@@ -287,7 +287,7 @@ class SVG:
         try:
             pipe = subprocess.Popen(options, stdout=subprocess.PIPE)
         except FileNotFoundError:
-            raise FileNotFoundError("Please make sure inkscape has been added to path")
+            raise FileNotFoundError("Please make sure inkscape is installed and has been added to the PATH")
 
         pipe.stdout.readline()
         pipe.stdout.readline()
