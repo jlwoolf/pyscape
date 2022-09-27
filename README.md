@@ -28,11 +28,12 @@
 
 
 
+
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
   <a href="https://github.com/jlwoolf/pillow-svg">
-    <img src="logo.svg" alt="Logo" width="80" height="80">
+    <img src="https://raw.githubusercontent.com/jlwoolf/pillow-svg/master/logo.svg" alt="Logo" width="80" height="80">
   </a>
 
 <h3 align="center">Pillow-SVG</h3>
@@ -43,8 +44,6 @@
     <a href="https://github.com/jlwoolf/pillow-svg"><strong>Explore the docs »</strong></a>
     <br />
     <br />
-    <a href="https://github.com/jlwoolf/pillow-svg">View Demo</a>
-    ·
     <a href="https://github.com/jlwoolf/pillow-svg/issues">Report Bug</a>
     ·
     <a href="https://github.com/jlwoolf/pillow-svg/issues">Request Feature</a>

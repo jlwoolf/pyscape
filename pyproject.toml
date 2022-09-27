@@ -1,0 +1,33 @@
+# pyproject.toml
+
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pillow-svg"
+version = "1.0.3"
+description = "A library and command line utility for using SVG files with Pillow"
+readme = "README.md"
+authors = [{ name = "Jonathan Woolf", email = "jlwoolf@proton.me" }]
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+]
+keywords = ["svg", "inkscape", "pillow", "skia"]
+dependencies = [
+    "pillow",
+    "skia-python",
+]
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+dev = ["pip-tools", "pytest"]
+
+[project.urls]
+Homepage = "https://github.com/jlwoolf/pillow-svg"
+
+[project.scripts]
+pillow-svg = "PILSVG.CMD:main"

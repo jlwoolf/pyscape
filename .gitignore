@@ -1,4 +1,5 @@
 .vscode
 __pycache__
 build
-pillow_svg.egg-info
+dist
+*.egg-info
