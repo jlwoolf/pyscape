@@ -90,11 +90,12 @@ Pillow-SVG is a python image library with the goal of adding some form of svg in
 
 ## Installation
 
-Install Pillow-SVG with **pip**:
+While I quite like the name pillow-svg, the name is currently in use by another library on PyPi. I'm currently talking with the owner of that library to work on merging their functionality with my own, but for now Pillow-SVG requires manual build and install. To install Pillow-SVG, please build the package and install the wheel.
 
 ```
+python3 -m build
 python3 -m pip install --upgrade pip
-python3 -m pip install --upgrade pillow-svg
+python3 -m pip install ./dist/pillow_svg-1.0.3-py3-none-any.whl
 ```
 
 ### Skia
