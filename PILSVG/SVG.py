@@ -289,9 +289,6 @@ class SVG:
         except FileNotFoundError:
             raise FileNotFoundError("Please make sure inkscape is installed and has been added to the PATH")
 
-        pipe.stdout.readline()
-        pipe.stdout.readline()
-
         return Image.open(pipe.stdout)
 
     def __im(self, size: Tuple[int, int], margin: int = None, area: str = 'page', renderer: str = 'skia') -> Image.Image:
